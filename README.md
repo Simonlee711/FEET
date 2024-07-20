@@ -6,3 +6,5 @@ How Should Embeddings be Evaluated?
   2. Fine tune
   3. Calculate the difference or potential performance improvement
   4. Calculate the improvements over different number of shots
+ 
+# resources:
