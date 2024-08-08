@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.metrics import matthews_corrcoef, roc_auc_score, average_precision_score, precision_recall_curve, roc_curve, auc
 from lightgbm import LGBMClassifier
+from peft import LoraConfig, get_peft_model,  TaskType
 
 def evaluate_antibiotics(X_train, X_test, train, test, antibiotics):
     """
@@ -217,6 +218,17 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
 
         # Load model
         model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).to(device)
+
+        lora_config = LoraConfig(
+            task_type=TaskType.SEQ_CLS,
+            r=8,
+            lora_alpha=32,
+            target_modules=["q_lin"],
+            lora_dropout=0.1,
+            bias="none",
+            inference_mode=False
+        )
+        model = get_peft_model(model, lora_config)
 
         if freeze_model:
             for param in model.bert.parameters():
