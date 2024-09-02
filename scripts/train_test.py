@@ -6,7 +6,7 @@ from transformers import (
     DataCollatorWithPadding, TrainingArguments, Trainer, TextClassificationPipeline, 
     AdamW, get_scheduler, pipeline, RobertaTokenizerFast
 )
-from peft import LoraConfig, get_peft_model,  TaskType
+#from peft import LoraConfig, get_peft_model,  TaskType
 from scripts.encoder import encode_texts, encode_texts_biolm
 
 def evaluate_antibiotics(X_train, X_test, train, test, antibiotics):
@@ -400,3 +400,72 @@ def print_results(results):
         # Print the metrics with confidence intervals
         print(f"  Test - F1: {f1_mean:.4f} +/- {f1_error:.4f}, MCC: {res['Test Metrics']['Matthews Correlation Coefficient']:.4f}, "
               f"ROC-AUC: {roc_auc_mean:.4f} +/- {roc_auc_error:.4f}, PRC-AUC: {prc_auc_mean:.4f} +/- {prc_auc_error:.4f}")
+        
+        
+from torch.utils.data import random_split, DataLoader, Subset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+import torch
+import numpy as np
+
+def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, model_name, n_shots_list, freeze_model=False):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    results = {}
+
+    for antibiotic in antibiotics:
+        print(f"Processing for antibiotic: {antibiotic}")
+        
+        y_train = train[antibiotic].astype(int).values
+        y_test = test[antibiotic].astype(int).values
+        full_train_dataset = AntibioticDataset(X_train_texts, y_train, tokenizer)
+        test_dataset = AntibioticDataset(X_test_texts, y_test, tokenizer)
+        test_loader = DataLoader(test_dataset, batch_size=64)
+
+        for n_shots in n_shots_list:
+            if len(full_train_dataset) < n_shots:
+                print(f"Not enough data for {n_shots} shots for {antibiotic}.")
+                continue
+
+            subset_indices = np.random.choice(len(full_train_dataset), n_shots, replace=False)
+            few_shot_dataset = Subset(full_train_dataset, subset_indices)
+            train_loader = DataLoader(few_shot_dataset, batch_size=16, shuffle=True)
+
+            model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).to(device)
+            if freeze_model:
+                for param in model.base_model.parameters():
+                    param.requires_grad = False
+
+            training_args = TrainingArguments(
+                output_dir=f'./results/{antibiotic}_{n_shots}_shots',
+                evaluation_strategy='no',
+                num_train_epochs=3,
+                learning_rate=2e-5,
+                per_device_train_batch_size=16,
+                load_best_model_at_end=False,
+                no_cuda=not torch.cuda.is_available(),
+                report_to="none"
+            )
+
+            def compute_metrics(pred):
+                logits, labels = pred.predictions, pred.label_ids
+                predictions = np.argmax(logits, axis=-1)
+                return {
+                    'accuracy': np.mean(predictions == labels)
+                }
+
+            trainer = Trainer(
+                model=model,
+                args=training_args,
+                train_dataset=few_shot_dataset,
+                compute_metrics=compute_metrics
+            )
+
+            trainer.train()
+            eval_result = trainer.evaluate(test_loader)
+
+            print(f"Results for {antibiotic} with {n_shots} shots: {eval_result}")
+
+            results[(antibiotic, n_shots)] = eval_result
+
+    return results

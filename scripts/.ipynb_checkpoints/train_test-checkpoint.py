@@ -6,7 +6,7 @@ from transformers import (
     DataCollatorWithPadding, TrainingArguments, Trainer, TextClassificationPipeline, 
     AdamW, get_scheduler, pipeline, RobertaTokenizerFast
 )
-from peft import LoraConfig, get_peft_model,  TaskType
+#from peft import LoraConfig, get_peft_model,  TaskType
 from scripts.encoder import encode_texts, encode_texts_biolm
 
 def evaluate_antibiotics(X_train, X_test, train, test, antibiotics):
@@ -262,9 +262,17 @@ def compute_metrics(pred):
         'optimal_threshold': optimal_threshold
     }
 
-def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test_texts, train, test, antibiotics, model_name, freeze_model=False, n_bootstraps=1000):
-    from tqdm.auto import tqdm
-    
+from torch.utils.data import random_split
+
+from tqdm.auto import tqdm
+from torch.utils.data import DataLoader, random_split
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+from sklearn.utils import resample
+import torch
+import numpy as np
+
+def evaluate_antibiotics_with_confidence_intervals2(X_train_texts, X_test_texts, train, test, antibiotics, model_name, freeze_model=False, n_bootstraps=1000):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     results = {}
@@ -277,6 +285,7 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
         y_test = test[antibiotic].astype(int).values
 
         # Create datasets and dataloaders
+        #from your_dataset_class import AntibioticDataset  # Replace 'your_dataset_class' with your actual dataset class file
         full_train_dataset = AntibioticDataset(X_train_texts, y_train, tokenizer)
         test_dataset = AntibioticDataset(X_test_texts, y_test, tokenizer)
         
@@ -295,17 +304,6 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
         if freeze_model:
             for param in model.bert.parameters():
                 param.requires_grad = False
-        
-        lora_config = LoraConfig(
-            task_type=TaskType.SEQ_CLS,
-            r=8,
-            lora_alpha=32,
-            target_modules=["q_lin"],
-            lora_dropout=0.1,
-            bias="none",
-            inference_mode=False
-        )
-        model = get_peft_model(model, lora_config)
 
         training_args = TrainingArguments(
             output_dir='./results',
@@ -314,7 +312,7 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
             save_strategy='epoch',
             num_train_epochs=5,
             learning_rate=3e-5,
-            per_device_train_batch_size=32,
+            per_device_train_batch_size=16,
             per_device_eval_batch_size=64,
             weight_decay=0.01,
             metric_for_best_model='eval_loss',
@@ -323,6 +321,11 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
             fp16=True,
         )
 
+        # Trainer setup
+        def compute_metrics(preds):
+            # Define how to compute metrics here
+            return {}  # Return a dictionary of metrics
+        
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -349,17 +352,17 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
             f1_scores_list.append(np.max(f1))
 
         results[antibiotic] = {
-            'Optimal Threshold': metrics['optimal_threshold'],
+            'Optimal Threshold': metrics.get('optimal_threshold', None),
             'Test Metrics': {
-                'F1 Score': metrics['f1'],
-                'Matthews Correlation Coefficient': metrics['mcc'],
-                'ROC AUC': metrics['roc_auc'],
-                'PRC AUC': metrics['prc_auc'],
-                'fpr': metrics['fpr'],
-                'tpr': metrics['tpr'],
-                'auprc': metrics['auprc'],
-                'precision': metrics['precision'],
-                'recall': metrics['recall']
+                'F1 Score': metrics.get('f1', None),
+                'Matthews Correlation Coefficient': metrics.get('mcc', None),
+                'ROC AUC': metrics.get('roc_auc', None),
+                'PRC AUC': metrics.get('prc_auc', None),
+                'fpr': metrics.get('fpr', None),
+                'tpr': metrics.get('tpr', None),
+                'auprc': metrics.get('auprc', None),
+                'precision': metrics.get('precision', None),
+                'recall': metrics.get('recall', None)
             },
             'Confidence Intervals': {
                 'ROC AUC': {'Mean': np.mean(roc_aucs), '95% CI': np.percentile(roc_aucs, [2.5, 97.5])},
@@ -369,6 +372,7 @@ def evaluate_antibiotics_with_confidence_intervals_trainer(X_train_texts, X_test
         }
 
     return results
+
 
 def print_results(results):
     # Print results
@@ -396,3 +400,72 @@ def print_results(results):
         # Print the metrics with confidence intervals
         print(f"  Test - F1: {f1_mean:.4f} +/- {f1_error:.4f}, MCC: {res['Test Metrics']['Matthews Correlation Coefficient']:.4f}, "
               f"ROC-AUC: {roc_auc_mean:.4f} +/- {roc_auc_error:.4f}, PRC-AUC: {prc_auc_mean:.4f} +/- {prc_auc_error:.4f}")
+        
+        
+from torch.utils.data import random_split, DataLoader, Subset
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+import torch
+import numpy as np
+
+def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, model_name, n_shots_list, freeze_model=False):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    results = {}
+
+    for antibiotic in antibiotics:
+        print(f"Processing for antibiotic: {antibiotic}")
+        
+        y_train = train[antibiotic].astype(int).values
+        y_test = test[antibiotic].astype(int).values
+        full_train_dataset = AntibioticDataset(X_train_texts, y_train, tokenizer)
+        test_dataset = AntibioticDataset(X_test_texts, y_test, tokenizer)
+        test_loader = DataLoader(test_dataset, batch_size=64)
+
+        for n_shots in n_shots_list:
+            if len(full_train_dataset) < n_shots:
+                print(f"Not enough data for {n_shots} shots for {antibiotic}.")
+                continue
+
+            subset_indices = np.random.choice(len(full_train_dataset), n_shots, replace=False)
+            few_shot_dataset = Subset(full_train_dataset, subset_indices)
+            train_loader = DataLoader(few_shot_dataset, batch_size=16, shuffle=True)
+
+            model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).to(device)
+            if freeze_model:
+                for param in model.base_model.parameters():
+                    param.requires_grad = False
+
+            training_args = TrainingArguments(
+                output_dir=f'./results/{antibiotic}_{n_shots}_shots',
+                evaluation_strategy='no',
+                num_train_epochs=3,
+                learning_rate=2e-5,
+                per_device_train_batch_size=16,
+                load_best_model_at_end=False,
+                no_cuda=not torch.cuda.is_available(),
+                report_to="none"
+            )
+
+            def compute_metrics(pred):
+                logits, labels = pred.predictions, pred.label_ids
+                predictions = np.argmax(logits, axis=-1)
+                return {
+                    'accuracy': np.mean(predictions == labels)
+                }
+
+            trainer = Trainer(
+                model=model,
+                args=training_args,
+                train_dataset=few_shot_dataset,
+                compute_metrics=compute_metrics
+            )
+
+            trainer.train()
+            eval_result = trainer.evaluate(test_loader)
+
+            print(f"Results for {antibiotic} with {n_shots} shots: {eval_result}")
+
+            results[(antibiotic, n_shots)] = eval_result
+
+    return results
