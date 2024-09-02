@@ -404,7 +404,7 @@ def print_results(results):
         
 from torch.utils.data import random_split, DataLoader, Subset
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, f1_score
 import torch
 import numpy as np
 
@@ -447,38 +447,33 @@ def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, mod
                 report_to="none"
             )
 
-            def compute_metrics(pred):
-                logits, labels = pred.predictions, pred.label_ids
-                predictions = np.argmax(logits, axis=-1)
-
-                # Calculating F1 score
-                f1 = f1_score(labels, predictions)
-
-                # Calculating AUROC
-                # Softmax the logits to obtain probabilities
-                softmax_probs = torch.nn.functional.softmax(torch.tensor(logits), dim=1)[:, 1].numpy()
-                auroc = roc_auc_score(labels, softmax_probs)
-
-                # Calculating AUPRC
-                precision, recall, _ = precision_recall_curve(labels, softmax_probs)
-                auprc = auc(recall, precision)
-
-                return {
-                    'f1': f1,
-                    'auroc': auroc,
-                    'auprc': auprc
-                }
-
             trainer = Trainer(
                 model=model,
                 args=training_args,
-                train_dataset=few_shot_dataset,
-                compute_metrics=compute_metrics
+                train_dataset=few_shot_dataset
             )
 
             trainer.train()
-            eval_result = trainer.evaluate(test_loader)
 
+            # Manual evaluation
+            model.eval()
+            final_metrics = {'f1': [], 'auroc': [], 'auprc': []}
+            with torch.no_grad():
+                for batch in test_loader:
+                    inputs = {k: v.to(device) for k, v in batch.items() if k != 'labels'}
+                    labels = batch['labels'].to(device)
+                    outputs = model(**inputs)
+                    logits = outputs.logits
+
+                    predictions = torch.argmax(logits, dim=1)
+                    softmax_probs = torch.nn.functional.softmax(logits, dim=1)[:, 1].numpy()
+
+                    final_metrics['f1'].append(f1_score(labels.cpu().numpy(), predictions.cpu().numpy()))
+                    final_metrics['auroc'].append(roc_auc_score(labels.cpu().numpy(), softmax_probs))
+                    precision, recall, _ = precision_recall_curve(labels.cpu().numpy(), softmax_probs)
+                    final_metrics['auprc'].append(auc(recall, precision))
+
+            eval_result = {key: np.mean(vals) for key, vals in final_metrics.items()}
             print(f"Results for {antibiotic} with {n_shots} shots: {eval_result}")
 
             results[(antibiotic, n_shots)] = eval_result
@@ -500,3 +495,4 @@ class AntibioticDataset(Dataset):
         item = {key: val[idx].clone().detach() for key, val in self.encodings.items()}  # Ensure no memory leak
         item['labels'] = torch.tensor(self.labels[idx], dtype=torch.long)
         return item
+
