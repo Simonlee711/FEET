@@ -487,19 +487,16 @@ def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, mod
 
 from torch.utils.data import Dataset
 
-class AntibioticDataset2(Dataset):
+class AntibioticDataset(Dataset):
     def __init__(self, texts, labels, tokenizer):
-        self.texts = texts
         self.labels = labels
         self.tokenizer = tokenizer
+        self.encodings = tokenizer(texts, padding='max_length', truncation=True, max_length=512, return_tensors="pt")
 
     def __len__(self):
-        return len(self.texts)
+        return len(self.labels)
 
     def __getitem__(self, idx):
-        tokenized_text = self.tokenizer(self.texts[idx], padding='max_length', truncation=True, max_length=512, return_tensors="pt")
-        return {
-            'input_ids': tokenized_text['input_ids'].squeeze(0),
-            'attention_mask': tokenized_text['attention_mask'].squeeze(0),
-            'labels': torch.tensor(self.labels[idx], dtype=torch.long)
-        }
+        item = {key: val[idx].clone().detach() for key, val in self.encodings.items()}  # Ensure no memory leak
+        item['labels'] = torch.tensor(self.labels[idx], dtype=torch.long)
+        return item
