@@ -450,8 +450,23 @@ def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, mod
             def compute_metrics(pred):
                 logits, labels = pred.predictions, pred.label_ids
                 predictions = np.argmax(logits, axis=-1)
+
+                # Calculating F1 score
+                f1 = f1_score(labels, predictions)
+
+                # Calculating AUROC
+                # Softmax the logits to obtain probabilities
+                softmax_probs = torch.nn.functional.softmax(torch.tensor(logits), dim=1)[:, 1].numpy()
+                auroc = roc_auc_score(labels, softmax_probs)
+
+                # Calculating AUPRC
+                precision, recall, _ = precision_recall_curve(labels, softmax_probs)
+                auprc = auc(recall, precision)
+
                 return {
-                    'accuracy': np.mean(predictions == labels)
+                    'f1': f1,
+                    'auroc': auroc,
+                    'auprc': auprc
                 }
 
             trainer = Trainer(
