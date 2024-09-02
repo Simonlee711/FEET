@@ -456,6 +456,7 @@ def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, mod
             trainer.train()
 
             # Manual evaluation
+            # Manual evaluation
             model.eval()
             final_metrics = {'f1': [], 'auroc': [], 'auprc': []}
             with torch.no_grad():
@@ -466,15 +467,21 @@ def few_shot_learning(X_train_texts, X_test_texts, train, test, antibiotics, mod
                     logits = outputs.logits
 
                     predictions = torch.argmax(logits, dim=1)
-                    softmax_probs = torch.nn.functional.softmax(logits, dim=1)[:, 1].numpy()
+                    # Move predictions and labels to CPU for metric calculation
+                    predictions = predictions.cpu()
+                    labels = labels.cpu()
 
-                    final_metrics['f1'].append(f1_score(labels.cpu().numpy(), predictions.cpu().numpy()))
-                    final_metrics['auroc'].append(roc_auc_score(labels.cpu().numpy(), softmax_probs))
-                    precision, recall, _ = precision_recall_curve(labels.cpu().numpy(), softmax_probs)
+                    softmax_probs = torch.nn.functional.softmax(logits, dim=1)[:, 1].cpu().numpy()  # Move to CPU and convert to numpy
+
+                    # Calculate F1 score, AUROC and AUPRC using CPU tensors or numpy arrays
+                    final_metrics['f1'].append(f1_score(labels.numpy(), predictions.numpy()))
+                    final_metrics['auroc'].append(roc_auc_score(labels.numpy(), softmax_probs))
+                    precision, recall, _ = precision_recall_curve(labels.numpy(), softmax_probs)
                     final_metrics['auprc'].append(auc(recall, precision))
 
             eval_result = {key: np.mean(vals) for key, vals in final_metrics.items()}
             print(f"Results for {antibiotic} with {n_shots} shots: {eval_result}")
+
 
             results[(antibiotic, n_shots)] = eval_result
 
