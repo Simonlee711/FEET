@@ -1,5 +1,11 @@
 # FEET: A Framework for Evaluating Embedding Techniques
 
+## Abstract
+
+In this study, we introduce FEET, a standardized protocol designed to guide the development and benchmarking of foundation models. While numerous benchmarks exist for assessing these models, we propose a structured evaluation across three distinct scenarios to obtain a comprehensive understanding of their practical performance. We define three principal use cases: frozen embeddings, few-shot embeddings, and fully fine-tuned embeddings. Each scenario is detailed and exemplified through a case study in the medical domain, illustrating how these evaluations provide an extensive assessment of the effectiveness of foundation models in research applications. This protocol is recommended as a standard for ongoing research dedicated to representation learning models for deep learning research.
+
+---
+
 ## Introduction
 
 This repository introduces **FEET (Framework for Evaluating Embedding Techniques)**, a standardized protocol designed to guide the development and benchmarking of foundation models. FEET focuses on the evaluation of embeddings across three distinct use cases:
@@ -55,6 +61,6 @@ We encourage researchers and practitioners to use FEET as a standard protocol fo
 ---
 ## Authors:
 
-Simon Lee (simonlee711@g.ucla.edu)
-John Lee
-Jeffrey Chiang
+- Simon Lee (simonlee711@g.ucla.edu)
+- John Lee
+- Jeffrey Chiang
