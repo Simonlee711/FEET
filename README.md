@@ -56,11 +56,3 @@ The results of our evaluation are displayed in **FEET Tables**, where we compare
 The FEET framework offers a principled and comprehensive way to evaluate foundation models across different embedding scenarios. By reporting on Frozen, Few-shot, and Fully Fine-tuned embeddings, we provide a deeper understanding of model performance, adaptability, and limitations.
 
 We encourage researchers and practitioners to use FEET as a standard protocol for evaluating foundation models in their studies.
-
-
----
-## Authors:
-
-- Simon Lee (simonlee711@g.ucla.edu)
-- John Lee
-- Jeffrey Chiang
