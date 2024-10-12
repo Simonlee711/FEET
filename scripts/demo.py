@@ -31,7 +31,7 @@ def main():
     model_name = 'distilbert-base-uncased-finetuned-sst-2-english'
 
     # =========================
-    # Benchmarking
+    # Benchmarking Frozen Embeddings
     # =========================
     print("=== Benchmarking the Pre-trained Model ===")
     # Initialize the benchmark class
@@ -45,7 +45,7 @@ def main():
     print()
 
     # =========================
-    # Few-Shot Learning
+    # Few-Shot Learning Embeddings
     # =========================
     print("=== Few-Shot Learning Experiments ===")
     # Initialize the few-shot learner class
@@ -62,7 +62,7 @@ def main():
         print()
 
     # =========================
-    # Fine-Tuning
+    # Fine-Tunied Embeddings
     # =========================
     print("=== Fine-Tuning the Model ===")
     # Initialize the fine-tuner class
