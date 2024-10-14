@@ -18,7 +18,6 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import random
-from sklearn.model_selection import train_test_split
 
 
 class ModelBenchmark:
@@ -27,33 +26,25 @@ class ModelBenchmark:
 
     Attributes:
         model_name (str): The name of the model to load from HuggingFace.
-        X_train (List[str]): The input features for training (e.g., text).
-        y_train (List[int]): The true labels for training.
-        X_test (List[str]): The input features for testing (e.g., text).
-        y_test (List[int]): The true labels for testing.
+        X_features (List[str]): The input features (e.g., text).
+        y_labels (List[int]): The true labels.
         model: The loaded model.
         tokenizer: The tokenizer associated with the model.
         device: The device to run the model on (CPU or GPU).
-        embeddings (np.ndarray): The embeddings obtained during inference.
     """
 
-    def __init__(self, model_name, X_features, y_labels, test_size=0.2, random_state=42):
+    def __init__(self, model_name, X_features, y_labels):
         """
-        Initializes the ModelBenchmark class with a train-test split.
+        Initializes the ModelBenchmark class.
 
         Args:
             model_name (str): The name of the model to load from HuggingFace.
             X_features (List[str]): The input features (e.g., text).
             y_labels (List[int]): The true labels.
-            test_size (float): Proportion of the dataset to include in the test split.
-            random_state (int): Random seed for reproducibility.
         """
         self.model_name = model_name
-
-        # Perform train-test split
-        self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
-            X_features, y_labels, test_size=test_size, random_state=random_state
-        )
+        self.X_features = X_features
+        self.y_labels = y_labels
 
         # Set the device to GPU if available, else CPU
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -64,15 +55,9 @@ class ModelBenchmark:
         self.model.to(self.device)
         self.model.eval()
 
-        # Set the model to output hidden states
-        self.model.config.output_hidden_states = True
-
-        # Initialize embeddings to None
-        self.embeddings = None
-
     def benchmark(self, batch_size=32):
         """
-        Performs benchmarking of the model on the test dataset and collects embeddings.
+        Performs benchmarking of the model on the dataset.
 
         Args:
             batch_size (int): The batch size for DataLoader.
@@ -80,15 +65,15 @@ class ModelBenchmark:
         Returns:
             dict: A dictionary containing accuracy, precision, recall, and F1 score.
         """
-        # Tokenize the test features
+        # Tokenize the input features
         inputs = self.tokenizer(
-            self.X_test,
+            self.X_features,
             return_tensors='pt',
             padding=True,
             truncation=True,
             max_length=512
         )
-        labels = torch.tensor(self.y_test)
+        labels = torch.tensor(self.y_labels)
 
         # Create a TensorDataset and DataLoader
         dataset = TensorDataset(inputs['input_ids'], inputs['attention_mask'], labels)
@@ -96,7 +81,6 @@ class ModelBenchmark:
 
         all_preds = []
         all_labels = []
-        all_embeddings = []
 
         # Disable gradient calculations for inference
         with torch.no_grad():
@@ -108,27 +92,19 @@ class ModelBenchmark:
                 # Get model outputs
                 outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
                 logits = outputs.logits
-                hidden_states = outputs.hidden_states  # tuple of hidden states
-
-                # Get embeddings from the last hidden state (e.g., [CLS] token)
-                embeddings = hidden_states[-1][:, 0, :]  # Shape: (batch_size, hidden_size)
 
                 # Get predictions
                 preds = torch.argmax(logits, dim=1)
 
-                # Collect predictions, labels, and embeddings
+                # Collect predictions and labels
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
-                all_embeddings.extend(embeddings.cpu().numpy())
 
         # Calculate performance metrics
         accuracy = accuracy_score(all_labels, all_preds)
         precision = precision_score(all_labels, all_preds, average='weighted', zero_division=0)
         recall = recall_score(all_labels, all_preds, average='weighted', zero_division=0)
         f1 = f1_score(all_labels, all_preds, average='weighted', zero_division=0)
-
-        # Store embeddings for further analysis
-        self.embeddings = np.array(all_embeddings)
 
         return {
             'accuracy': accuracy,
@@ -137,60 +113,6 @@ class ModelBenchmark:
             'f1_score': f1
         }
 
-    def get_embeddings(self):
-        """
-        Returns the embeddings obtained during benchmarking.
-
-        Returns:
-            np.ndarray: An array of embeddings.
-        """
-        if self.embeddings is None:
-            raise ValueError("No embeddings found. Please run the benchmark method first.")
-        return self.embeddings
-
-    def infer(self, texts, batch_size=32):
-        """
-        Performs inference on new texts and returns predictions.
-
-        Args:
-            texts (List[str]): A list of texts to perform inference on.
-            batch_size (int): Batch size for processing.
-
-        Returns:
-            List[int]: Predicted labels for the input texts.
-        """
-        self.model.eval()
-
-        # Tokenize the input texts
-        inputs = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
-
-        dataset = TensorDataset(inputs['input_ids'], inputs['attention_mask'])
-        dataloader = DataLoader(dataset, batch_size=batch_size)
-
-        all_preds = []
-
-        with torch.no_grad():
-            for batch in dataloader:
-                input_ids = batch[0].to(self.device)
-                attention_mask = batch[1].to(self.device)
-
-                # Get model outputs
-                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-                logits = outputs.logits
-
-                # Get predictions
-                preds = torch.argmax(logits, dim=1)
-
-                all_preds.extend(preds.cpu().numpy())
-
-        return all_preds
-
 
 class ModelFewShotLearner:
     """
@@ -198,46 +120,33 @@ class ModelFewShotLearner:
 
     This class allows you to perform few-shot learning by fine-tuning a model on small
     subsets of the dataset, where the sample sizes are powers of 2 (from 2^1 up to 2^N).
-    It also allows extraction of embeddings from the fine-tuned models and includes an
-    inference function.
 
     Attributes:
         model_name (str): The name of the model to load from HuggingFace.
-        X_train (List[str]): The input features for training (e.g., text).
-        y_train (List[int]): The true labels for training.
-        X_test (List[str]): The input features for testing (e.g., text).
-        y_test (List[int]): The true labels for testing.
+        X_features (List[str]): The input features (e.g., text).
+        y_labels (List[int]): The true labels.
         device: The device to run the model on (CPU or GPU).
         tokenizer: The tokenizer associated with the model.
-        models (dict): A dictionary to store trained models for each sample size.
     """
 
-    def __init__(self, model_name, X_features, y_labels, test_size=0.2, random_state=42):
+    def __init__(self, model_name, X_features, y_labels):
         """
-        Initializes the ModelFewShotLearner class with a train-test split.
+        Initializes the ModelFewShotLearner class.
 
         Args:
             model_name (str): The name of the model to load from HuggingFace.
             X_features (List[str]): The input features (e.g., text).
             y_labels (List[int]): The true labels.
-            test_size (float): Proportion of the dataset to include in the test split.
-            random_state (int): Random seed for reproducibility.
         """
         self.model_name = model_name
-
-        # Perform train-test split
-        self.X_train_full, self.X_test, self.y_train_full, self.y_test = train_test_split(
-            X_features, y_labels, test_size=test_size, random_state=random_state
-        )
+        self.X_features = X_features
+        self.y_labels = y_labels
 
         # Set the device to GPU if available, else CPU
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Load the tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
-
-        # Initialize a dictionary to store models trained with different sample sizes
-        self.models = {}
 
     def few_shot_learning(self, max_N=10, batch_size=8, num_epochs=3, validation_split=0.1):
         """
@@ -253,26 +162,23 @@ class ModelFewShotLearner:
             dict: A dictionary with sample sizes as keys and performance metrics as values.
         """
         results = {}
-        total_samples = len(self.X_train_full)
+        total_samples = len(self.X_features)
 
-        # Shuffle the training data
-        combined = list(zip(self.X_train_full, self.y_train_full))
+        # Shuffle the dataset
+        combined = list(zip(self.X_features, self.y_labels))
         random.shuffle(combined)
-        X_train_shuffled, y_train_shuffled = zip(*combined)
+        X_features_shuffled, y_labels_shuffled = zip(*combined)
 
         for n in range(1, max_N + 1):
             sample_size = min(2 ** n, total_samples)
             print(f"Performing few-shot learning with sample size: {sample_size}")
 
-            X_sample = X_train_shuffled[:sample_size]
-            y_sample = y_train_shuffled[:sample_size]
+            X_sample = X_features_shuffled[:sample_size]
+            y_sample = y_labels_shuffled[:sample_size]
 
-            # Initialize a new model for each sample size
+            # Initialize a new model for each sample size to ensure independence
             model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
             model.to(self.device)
-
-            # Set the model to output hidden states
-            model.config.output_hidden_states = True
 
             # Split into training and validation sets
             val_size = int(validation_split * sample_size)
@@ -303,7 +209,7 @@ class ModelFewShotLearner:
 
             # Define training arguments with early stopping
             training_args = TrainingArguments(
-                output_dir=f'./results_{sample_size}',
+                output_dir='./results',
                 num_train_epochs=num_epochs,
                 per_device_train_batch_size=batch_size,
                 per_device_eval_batch_size=batch_size,
@@ -330,16 +236,8 @@ class ModelFewShotLearner:
             # Fine-tune the model
             trainer.train()
 
-            # Evaluate on test set
-            test_encodings = self.tokenizer(
-                self.X_test,
-                truncation=True,
-                padding=True,
-                max_length=512
-            )
-            test_dataset = self._create_dataset(test_encodings, self.y_test)
-
-            eval_result = trainer.evaluate(eval_dataset=test_dataset)
+            # Evaluate on validation set
+            eval_result = trainer.evaluate()
 
             results[sample_size] = {
                 'eval_loss': eval_result['eval_loss'],
@@ -349,107 +247,59 @@ class ModelFewShotLearner:
                 'eval_f1': eval_result.get('eval_f1', None)
             }
 
-            # Save the trained model
-            self.models[sample_size] = model
-
         return results
 
-    def get_embeddings(self, sample_size, texts, batch_size=32):
+    def _create_dataset(self, encodings, labels):
         """
-        Generates embeddings for the provided texts using the fine-tuned model for a specific sample size.
+        Creates a PyTorch dataset from encodings and labels.
 
         Args:
-            sample_size (int): The sample size corresponding to the model used during training.
-            texts (List[str]): A list of texts to generate embeddings for.
-            batch_size (int): Batch size for processing.
+            encodings (dict): Tokenized inputs.
+            labels (List[int]): Corresponding labels.
 
         Returns:
-            np.ndarray: An array of embeddings.
-
-        Raises:
-            ValueError: If the model for the given sample size is not found.
+            torch.utils.data.Dataset: A dataset object.
         """
-        if sample_size not in self.models:
-            raise ValueError(f"No model found for sample size {sample_size}. Please run few_shot_learning first.")
+        class TorchDataset(torch.utils.data.Dataset):
+            def __init__(self, encodings, labels):
+                self.encodings = encodings
+                self.labels = labels
 
-        model = self.models[sample_size]
-        model.eval()
+            def __getitem__(self, idx):
+                item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+                item['labels'] = torch.tensor(self.labels[idx])
+                return item
 
-        # Tokenize the input texts
-        inputs = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
+            def __len__(self):
+                return len(self.labels)
 
-        dataset = TensorDataset(inputs['input_ids'], inputs['attention_mask'])
-        dataloader = DataLoader(dataset, batch_size=batch_size)
+        return TorchDataset(encodings, labels)
 
-        all_embeddings = []
-
-        with torch.no_grad():
-            for batch in dataloader:
-                input_ids = batch[0].to(self.device)
-                attention_mask = batch[1].to(self.device)
-
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-                hidden_states = outputs.hidden_states
-                embeddings = hidden_states[-1][:, 0, :]  # [CLS] token embeddings
-
-                all_embeddings.extend(embeddings.cpu().numpy())
-
-        return np.array(all_embeddings)
-
-    def infer(self, sample_size, texts, batch_size=32):
+    def compute_metrics(self, pred):
         """
-        Performs inference on new texts using the model trained with a specific sample size.
+        Compute metrics for evaluation.
 
         Args:
-            sample_size (int): The sample size corresponding to the model used during training.
-            texts (List[str]): A list of texts to perform inference on.
-            batch_size (int): Batch size for processing.
+            pred: Predictions from the model.
 
         Returns:
-            List[int]: Predicted labels for the input texts.
-
-        Raises:
-            ValueError: If the model for the given sample size is not found.
+            dict: A dictionary containing accuracy, precision, recall, and F1 score.
         """
-        if sample_size not in self.models:
-            raise ValueError(f"No model found for sample size {sample_size}. Please run few_shot_learning first.")
+        labels = pred.label_ids
+        preds = np.argmax(pred.predictions, axis=1)
 
-        model = self.models[sample_size]
-        model.eval()
+        accuracy = accuracy_score(labels, preds)
+        precision = precision_score(labels, preds, average='weighted', zero_division=0)
+        recall = recall_score(labels, preds, average='weighted', zero_division=0)
+        f1 = f1_score(labels, preds, average='weighted', zero_division=0)
 
-        # Tokenize the input texts
-        inputs = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1': f1
+        }
 
-        dataset = TensorDataset(inputs['input_ids'], inputs['attention_mask'])
-        dataloader = DataLoader(dataset, batch_size=batch_size)
-
-        all_preds = []
-
-        with torch.no_grad():
-            for batch in dataloader:
-                input_ids = batch[0].to(self.device)
-                attention_mask = batch[1].to(self.device)
-
-                outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-                logits = outputs.logits
-
-                preds = torch.argmax(logits, dim=1)
-
-                all_preds.extend(preds.cpu().numpy())
-
-        return all_preds
 
 class ModelFineTuner:
     """
@@ -457,7 +307,6 @@ class ModelFineTuner:
 
     This class allows you to fine-tune any model from HuggingFace on your dataset. It includes
     support for early stopping and uses a validation dataset to monitor performance.
-    It also provides functionality to extract embeddings from the fine-tuned model.
 
     Attributes:
         model_name (str): The name of the model to load from HuggingFace.
@@ -488,9 +337,6 @@ class ModelFineTuner:
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(self.model_name)
         self.model.to(self.device)
-
-        # Set the model to output hidden states
-        self.model.config.output_hidden_states = True
 
     def fine_tune(self, batch_size=8, num_epochs=3, validation_split=0.1):
         """
@@ -577,46 +423,6 @@ class ModelFineTuner:
             'eval_recall': eval_result.get('eval_recall', None),
             'eval_f1': eval_result.get('eval_f1', None)
         }
-
-    def get_embeddings(self, texts, batch_size=32):
-        """
-        Generates embeddings for the provided texts using the fine-tuned model.
-
-        Args:
-            texts (List[str]): A list of texts to generate embeddings for.
-            batch_size (int): Batch size for processing.
-
-        Returns:
-            np.ndarray: An array of embeddings.
-        """
-        self.model.eval()
-
-        # Tokenize the input texts
-        inputs = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            padding=True,
-            truncation=True,
-            max_length=512
-        )
-
-        dataset = TensorDataset(inputs['input_ids'], inputs['attention_mask'])
-        dataloader = DataLoader(dataset, batch_size=batch_size)
-
-        all_embeddings = []
-
-        with torch.no_grad():
-            for batch in dataloader:
-                input_ids = batch[0].to(self.device)
-                attention_mask = batch[1].to(self.device)
-
-                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
-                hidden_states = outputs.hidden_states
-                embeddings = hidden_states[-1][:, 0, :]  # [CLS] token embeddings
-
-                all_embeddings.extend(embeddings.cpu().numpy())
-
-        return np.array(all_embeddings)
 
     def _create_dataset(self, encodings, labels):
         """
