@@ -26,13 +26,6 @@ Each use case is benchmarked with performance metrics to assess how well the mod
 ## Dataset
 The main dataset used for evaluation is the **MIMIC-IV dataset**, specifically focusing on the prediction of antibiotic prescriptions. The dataset contains medical records and features from patients in critical care settings. To access the MIMIC-IV dataset, you must complete the necessary approval process, as it contains sensitive medical data. Preprocessing scripts are contained in `preprocessing/` to extract antibiotics cohort.
 
-## Code and Replication
-
-You can find the code to replicate the results in this study [here](https://anonymous.4open.science/r/embeddings_eval-846B/README.md). The repository includes:
-- Scripts for data preprocessing.
-- Benchmarking scripts for evaluating frozen, few-shot, and fully fine-tuned embeddings.
-- FEET Table generation scripts to present the results clearly.
-
 ## Results and Benchmarking
 
 The results of our evaluation are displayed in **FEET Tables**, where we compare different models across the embedding scenarios. The tables report AUROC and AUPRC scores across different antibiotics tasks. Furthermore, we introduce **$\delta$ FEET Tables** to highlight the relative performance improvements or drop-offs in comparison to the frozen embeddings.
