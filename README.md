@@ -1,4 +1,4 @@
-![GitHub](https://img.shields.io/github/license/Simonlee711/FEET) [![arXiv](https://img.shields.io/badge/arXiv-2402.00160-red.svg)](https://arxiv.org/abs/2402.00160)  
+![GitHub](https://img.shields.io/github/license/Simonlee711/FEET) [![arXiv](https://img.shields.io/badge/arXiv-2411.01322-red.svg)](https://arxiv.org/abs/2411.01322)  
 # FEET: A Framework for Evaluating Embedding Techniques
 
 ## Abstract
