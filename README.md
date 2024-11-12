@@ -50,3 +50,16 @@ The results of our evaluation are displayed in **FEET Tables**, where we compare
 The FEET framework offers a principled and comprehensive way to evaluate foundation models across different embedding scenarios. By reporting on Frozen, Few-shot, and Fully Fine-tuned embeddings, we provide a deeper understanding of model performance, adaptability, and limitations.
 
 We encourage researchers and practitioners to use FEET as a standard protocol for evaluating foundation models in their studies.
+
+# Citing
+```
+@misc{lee2024feetframeworkevaluatingembedding,
+      title={FEET: A Framework for Evaluating Embedding Techniques}, 
+      author={Simon A. Lee and John Lee and Jeffrey N. Chiang},
+      year={2024},
+      eprint={2411.01322},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2411.01322}, 
+}
+```
